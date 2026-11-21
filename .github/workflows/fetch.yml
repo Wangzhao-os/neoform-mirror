@@ -14,13 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all required artifacts
+      - name: Download all dependencies
         shell: bash
         run: |
           set -e
           OUT="m2"
           mkdir -p "$OUT"
-
           fetch() {
             local base="$1" group="$2" art="$3" ver="$4"
             local gp="${group//.//}"
@@ -28,38 +27,47 @@ jobs:
             mkdir -p "$dir"
             for ext in pom jar module; do
               local url="$base/$gp/$art/$ver/$art-$ver.$ext"
-              echo "  -> $group:$art:$ver ($ext)"
               curl -fsSL --retry 3 "$url" -o "$dir/$art-$ver.$ext" 2>/dev/null || rm -f "$dir/$art-$ver.$ext"
             done
           }
 
-          NF="https://maven.neoforged.net/releases"
-
-          echo "=== core ==="
-          fetch "$NF" net.neoforged neoform-runtime 2.0.18
-
-          echo "=== deps from neoforged ==="
-          fetch "$NF" io.codechicken DiffPatch 2.0.0.36
-          fetch "$NF" net.neoforged AutoRenamingTool 2.0.17
-          fetch "$NF" net.neoforged.jst jst-cli-bundle 2.0.6
-          fetch "$NF" net.neoforged.installertools installertools 4.0.12
-          fetch "$NF" net.neoforged srgutils 1.0.10
-          fetch "$NF" net.neoforged.installertools problems-api 3.0.3
-
-          echo "=== deps from minecraftforge ==="
+          fetch "https://maven.neoforged.net/releases" io.codechicken DiffPatch 2.0.0.36
+          fetch "https://maven.neoforged.net/releases" net.neoforged AutoRenamingTool 2.0.17
+          fetch "https://maven.neoforged.net/releases" net.neoforged.jst jst-cli-bundle 2.0.6
+          fetch "https://maven.neoforged.net/releases" net.neoforged.installertools installertools 4.0.12
+          fetch "https://maven.neoforged.net/releases" net.neoforged srgutils 1.0.10
+          fetch "https://maven.neoforged.net/releases" net.neoforged.installertools problems-api 3.0.3
+          fetch "https://maven.neoforged.net/releases" net.neoforged neoform-runtime 2.0.18
           fetch "https://maven.minecraftforge.net" net.minecraftforge mergetool 1.1.7
-
-          echo "=== deps from fabricmc ==="
           fetch "https://maven.fabricmc.net" net.fabricmc fabric-loom-native 0.2.1
-
-          echo "=== deps from maven central ==="
           fetch "https://repo1.maven.org/maven2" info.picocli picocli 4.7.6
           fetch "https://repo1.maven.org/maven2" com.google.code.gson gson 2.10.1
           fetch "https://repo1.maven.org/maven2" org.eclipse.jdt ecj 3.42.0
+          fetch "https://repo1.maven.org/maven2" com.google.code.gson gson 2.8.9
+          fetch "https://repo1.maven.org/maven2" com.nothome javaxdelta 2.0.1
+          fetch "https://repo1.maven.org/maven2" de.siegmar fastcsv 2.0.0
+          fetch "https://repo1.maven.org/maven2" it.unimi.dsi fastutil 8.3.1
+          fetch "https://repo1.maven.org/maven2" net.covers1624 Quack 0.4.10.101
+          fetch "https://maven.minecraftforge.net" net.minecraftforge srgutils 0.4.15
+          fetch "https://repo1.maven.org/maven2" net.neoforged.installertools binarypatcher 4.0.12
+          fetch "https://repo1.maven.org/maven2" net.neoforged.installertools cli-utils 2.1.4
+          fetch "https://repo1.maven.org/maven2" net.neoforged.installertools cli-utils 4.0.12
+          fetch "https://repo1.maven.org/maven2" net.neoforged.javadoctor gson-io 2.0.17
+          fetch "https://maven.neoforged.net/releases" net.neoforged accesstransformers 13.0.1
+          fetch "https://repo1.maven.org/maven2" net.sf.jopt-simple jopt-simple 5.0.4
+          fetch "https://repo1.maven.org/maven2" net.sf.jopt-simple jopt-simple 6.0-alpha-3
+          fetch "https://repo1.maven.org/maven2" org.apache.commons commons-compress 1.18
+          fetch "https://repo1.maven.org/maven2" org.apache.commons commons-lang3 3.9
+          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-commons 9.5
+          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-commons 9.9.1
+          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-tree 9.5
+          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-util 9.5
+          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm 9.5
+          fetch "https://repo1.maven.org/maven2" org.tukaani xz 1.10
+          fetch "https://repo1.maven.org/maven2" org.tukaani xz 1.8
 
-          echo "=== Downloaded files ==="
-          find "$OUT" -type f | sort
-          echo "=== Total size ==="
+          echo "=== File count ==="
+          find "$OUT" -type f | wc -l
           du -sh "$OUT"
 
       - name: Commit artifacts
@@ -68,5 +76,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Add all neoform-runtime dependencies" || echo "Nothing to commit"
+          git commit -m "Add all dependencies" || echo "Nothing to commit"
           git push || echo "Push failed"
