@@ -18,18 +18,12 @@ jobs:
         with:
           gradle-version: '9.6.1'
 
-      - name: Resolve all neoform-runtime dependencies
+      - name: Resolve full dependency tree
         shell: bash
         run: |
           set -e
           mkdir -p proj && cd proj
           cat > settings.gradle <<'EOF'
-          pluginManagement {
-            repositories {
-              gradlePluginPortal()
-              maven { url 'https://maven.neoforged.net/releases' }
-            }
-          }
           dependencyResolutionManagement {
             repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
             repositories {
@@ -45,20 +39,30 @@ jobs:
           plugins { id 'java' }
           dependencies {
             implementation 'net.neoforged:neoform-runtime:2.0.18'
+            runtimeOnly 'net.neoforged:neoform-runtime:2.0.18'
           }
+          // Force full recursive resolution of every configuration
           tasks.register('resolveAll') {
             doLast {
-              configurations.findAll { it.canBeResolved }.each { c ->
-                try { c.resolve() } catch (Exception e) { println "skip ${c.name}" }
+              ['compileClasspath','runtimeClasspath','runtimeElements','default'].each { name ->
+                def c = configurations.findByName(name)
+                if (c != null && c.canBeResolved) {
+                  try {
+                    def files = c.resolve()
+                    println "RESOLVED $name : ${files.size()} files"
+                  } catch (Exception e) { println "FAIL $name : ${e.message?.take(100)}" }
+                }
               }
             }
           }
           EOF
-          gradle resolveAll --no-daemon --stacktrace 2>&1 | tail -20
-          echo "=== Resolved, cache size: ==="
+          gradle resolveAll --no-daemon 2>&1 | tail -15
+          echo "=== cache size ==="
           du -sh "$HOME/.gradle/caches/modules-2"
+          echo "=== artifact count ==="
+          find "$HOME/.gradle/caches/modules-2/files-2.1" -name '*.jar' | wc -l
 
-      - name: Pack Gradle cache as tarball
+      - name: Pack Gradle cache
         shell: bash
         run: |
           cd "$GITHUB_WORKSPACE"
@@ -71,5 +75,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f gradle-cache.tar.gz
-          git commit -m "Add resolved Gradle dependency cache" || echo "Nothing to commit"
+          git commit -m "Resolve full runtime dependency tree" || echo "Nothing to commit"
           git push || echo "Push failed"
