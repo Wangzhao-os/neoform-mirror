@@ -29,29 +29,28 @@ jobs:
         run: |
           set -e
           cd workspace
-          # ensure source dirs exist so the build can evaluate
           mkdir -p src/main packloader/src/main/java run
-          echo "=== Running Gradle dependency resolution ==="
-          gradle :packloader:dependencies --configuration neoFormRuntimeTool --no-daemon 2>&1 | tail -40 || true
-          gradle :packloader:dependencies --configuration neoFormRuntimeExternalTools --no-daemon 2>&1 | tail -40 || true
-          gradle :packloader:compileJava --no-daemon 2>&1 | tail -30 || true
+          gradle :packloader:dependencies --configuration neoFormRuntimeTool --no-daemon 2>&1 | tail -20 || true
+          gradle :packloader:dependencies --configuration neoFormRuntimeExternalTools --no-daemon 2>&1 | tail -20 || true
+          gradle :packloader:compileJava --no-daemon 2>&1 | tail -20 || true
           echo "=== cache size ==="
           du -sh "$HOME/.gradle/caches/modules-2"
           echo "=== jar count ==="
           find "$HOME/.gradle/caches/modules-2/files-2.1" -name '*.jar' | wc -l
 
-      - name: Pack Gradle cache
+      - name: Pack and split Gradle cache
         shell: bash
         run: |
           cd "$GITHUB_WORKSPACE"
-          tar czf gradle-cache.tar.gz -C "$HOME/.gradle/caches" modules-2
-          ls -lh gradle-cache.tar.gz
+          rm -f gradle-cache.tar.gz.PART*
+          tar czf - -C "$HOME/.gradle/caches" modules-2 | split -b 90m - gradle-cache.tar.gz.PART
+          ls -lh gradle-cache.tar.gz.PART*
 
-      - name: Commit tarball
+      - name: Commit parts
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f gradle-cache.tar.gz
-          git commit -m "Resolve real workspace dependency cache" || echo "Nothing to commit"
+          git add -f gradle-cache.tar.gz.PART*
+          git commit -m "Add split dependency cache" || echo "Nothing to commit"
           git push || echo "Push failed"
