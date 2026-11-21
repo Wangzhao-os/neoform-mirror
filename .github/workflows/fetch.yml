@@ -14,67 +14,62 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all dependencies
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.1'
+
+      - name: Resolve all neoform-runtime dependencies
         shell: bash
         run: |
           set -e
-          OUT="m2"
-          mkdir -p "$OUT"
-          fetch() {
-            local base="$1" group="$2" art="$3" ver="$4"
-            local gp="${group//.//}"
-            local dir="$OUT/$gp/$art/$ver"
-            mkdir -p "$dir"
-            for ext in pom jar module; do
-              local url="$base/$gp/$art/$ver/$art-$ver.$ext"
-              curl -fsSL --retry 3 "$url" -o "$dir/$art-$ver.$ext" 2>/dev/null || rm -f "$dir/$art-$ver.$ext"
-            done
+          mkdir -p proj && cd proj
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+            repositories {
+              gradlePluginPortal()
+              maven { url 'https://maven.neoforged.net/releases' }
+            }
           }
+          dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+            repositories {
+              mavenCentral()
+              maven { url 'https://maven.neoforged.net/releases' }
+              maven { url 'https://maven.minecraftforge.net' }
+              maven { url 'https://maven.fabricmc.net' }
+            }
+          }
+          rootProject.name = 'depfetch'
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins { id 'java' }
+          dependencies {
+            implementation 'net.neoforged:neoform-runtime:2.0.18'
+          }
+          tasks.register('resolveAll') {
+            doLast {
+              configurations.findAll { it.canBeResolved }.each { c ->
+                try { c.resolve() } catch (Exception e) { println "skip ${c.name}" }
+              }
+            }
+          }
+          EOF
+          gradle resolveAll --no-daemon --stacktrace 2>&1 | tail -20
+          echo "=== Resolved, cache size: ==="
+          du -sh "$HOME/.gradle/caches/modules-2"
 
-          fetch "https://maven.neoforged.net/releases" io.codechicken DiffPatch 2.0.0.36
-          fetch "https://maven.neoforged.net/releases" net.neoforged AutoRenamingTool 2.0.17
-          fetch "https://maven.neoforged.net/releases" net.neoforged.jst jst-cli-bundle 2.0.6
-          fetch "https://maven.neoforged.net/releases" net.neoforged.installertools installertools 4.0.12
-          fetch "https://maven.neoforged.net/releases" net.neoforged srgutils 1.0.10
-          fetch "https://maven.neoforged.net/releases" net.neoforged.installertools problems-api 3.0.3
-          fetch "https://maven.neoforged.net/releases" net.neoforged neoform-runtime 2.0.18
-          fetch "https://maven.minecraftforge.net" net.minecraftforge mergetool 1.1.7
-          fetch "https://maven.fabricmc.net" net.fabricmc fabric-loom-native 0.2.1
-          fetch "https://repo1.maven.org/maven2" info.picocli picocli 4.7.6
-          fetch "https://repo1.maven.org/maven2" com.google.code.gson gson 2.10.1
-          fetch "https://repo1.maven.org/maven2" org.eclipse.jdt ecj 3.42.0
-          fetch "https://repo1.maven.org/maven2" com.google.code.gson gson 2.8.9
-          fetch "https://repo1.maven.org/maven2" com.nothome javaxdelta 2.0.1
-          fetch "https://repo1.maven.org/maven2" de.siegmar fastcsv 2.0.0
-          fetch "https://repo1.maven.org/maven2" it.unimi.dsi fastutil 8.3.1
-          fetch "https://repo1.maven.org/maven2" net.covers1624 Quack 0.4.10.101
-          fetch "https://maven.minecraftforge.net" net.minecraftforge srgutils 0.4.15
-          fetch "https://repo1.maven.org/maven2" net.neoforged.installertools binarypatcher 4.0.12
-          fetch "https://repo1.maven.org/maven2" net.neoforged.installertools cli-utils 2.1.4
-          fetch "https://repo1.maven.org/maven2" net.neoforged.installertools cli-utils 4.0.12
-          fetch "https://repo1.maven.org/maven2" net.neoforged.javadoctor gson-io 2.0.17
-          fetch "https://maven.neoforged.net/releases" net.neoforged accesstransformers 13.0.1
-          fetch "https://repo1.maven.org/maven2" net.sf.jopt-simple jopt-simple 5.0.4
-          fetch "https://repo1.maven.org/maven2" net.sf.jopt-simple jopt-simple 6.0-alpha-3
-          fetch "https://repo1.maven.org/maven2" org.apache.commons commons-compress 1.18
-          fetch "https://repo1.maven.org/maven2" org.apache.commons commons-lang3 3.9
-          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-commons 9.5
-          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-commons 9.9.1
-          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-tree 9.5
-          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm-util 9.5
-          fetch "https://repo1.maven.org/maven2" org.ow2.asm asm 9.5
-          fetch "https://repo1.maven.org/maven2" org.tukaani xz 1.10
-          fetch "https://repo1.maven.org/maven2" org.tukaani xz 1.8
+      - name: Pack Gradle cache as tarball
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          tar czf gradle-cache.tar.gz -C "$HOME/.gradle/caches" modules-2
+          ls -lh gradle-cache.tar.gz
 
-          echo "=== File count ==="
-          find "$OUT" -type f | wc -l
-          du -sh "$OUT"
-
-      - name: Commit artifacts
+      - name: Commit tarball
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Add all dependencies" || echo "Nothing to commit"
+          git add -f gradle-cache.tar.gz
+          git commit -m "Add resolved Gradle dependency cache" || echo "Nothing to commit"
           git push || echo "Push failed"
