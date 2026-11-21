@@ -1,0 +1,34 @@
+name: Fetch NeoForge Config JSON
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download moddev-config.json
+        shell: bash
+        run: |
+          set -e
+          P="net/neoforged/neoforge/26.1.2.95/neoforge-26.1.2.95-moddev-config.json"
+          mkdir -p "m2/$(dirname "$P")"
+          curl -fsSL --retry 3 "https://maven.neoforged.net/releases/$P" -o "m2/$P"
+          echo "=== downloaded ==="
+          ls -la "m2/$P"
+          echo "=== head ==="
+          head -c 200 "m2/$P"
+
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add neoforge moddev-config.json" || echo "Nothing to commit"
+          git push || echo "Push failed"
