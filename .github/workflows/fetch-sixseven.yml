@@ -1,0 +1,70 @@
+name: Fetch SixSeven Dependencies
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.1'
+
+      - name: Setup JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Resolve all sixseven dependencies
+        shell: bash
+        run: |
+          set -e
+          cd sixseven
+          mkdir -p src/main/java src/main/resources run
+          # settings 用原始源(CI 能访问 neoforged)
+          echo "=== runClient deps ==="
+          gradle :dependencies --no-daemon 2>&1 | tail -30 || true
+          echo "=== createMinecraftArtifacts (full toolchain) ==="
+          gradle createMinecraftArtifacts --no-daemon 2>&1 | tail -20 || true
+          echo "=== compileJava ==="
+          gradle compileJava --no-daemon 2>&1 | tail -20 || true
+          echo "=== resolve all resolvable configurations (forces DevLaunch etc) ==="
+          cat > /tmp/allconf.gradle <<'GEOF'
+          allprojects {
+            tasks.register('allDeps') {
+              doLast {
+                configurations.findAll { it.canBeResolved }.each { c ->
+                  try { c.resolve(); println "OK ${c.name}" } catch (Exception e) { println "SKIP ${c.name}" }
+                }
+              }
+            }
+          }
+          GEOF
+          gradle allDeps --no-daemon -I /tmp/allconf.gradle 2>&1 | tail -20 || true
+          echo "=== cache size ==="
+          du -sh "$HOME/.gradle/caches/modules-2"
+          find "$HOME/.gradle/caches/modules-2/files-2.1" -name '*.jar' | wc -l
+
+      - name: Pack and split
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          rm -f sixseven-cache.tar.gz.PART*
+          tar czf - -C "$HOME/.gradle/caches" modules-2 | split -b 90m - sixseven-cache.tar.gz.PART
+          ls -lh sixseven-cache.tar.gz.PART*
+
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f sixseven-cache.tar.gz.PART*
+          git commit -m "Add sixseven full dependency cache" || echo "Nothing to commit"
+          git push || echo "Push failed"
